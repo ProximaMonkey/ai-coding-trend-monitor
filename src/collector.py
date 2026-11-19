@@ -77,9 +77,7 @@ def collect(client, conn, query=QUERY, max_posts=None, max_pages=None):
     while True:
         if max_pages is not None and pages >= max_pages:
             break
-        with _write_txn(conn):
-            capped = max_posts is not None and storage.count_posts(conn) >= max_posts
-        if capped:
+        if max_posts is not None and storage.count_posts(conn) >= max_posts:
             break
 
         try:
@@ -87,9 +85,8 @@ def collect(client, conn, query=QUERY, max_posts=None, max_pages=None):
         except Exception:
             # A concurrent run may have filled the cap while we retried;
             # in that case exit cleanly rather than propagating the error.
-            with _write_txn(conn):
-                capped = max_posts is not None and storage.count_posts(conn) >= max_posts
-            if capped:
+            # Plain reads never block on a concurrent writer's lock.
+            if max_posts is not None and storage.count_posts(conn) >= max_posts:
                 break
             raise
         pages += 1
