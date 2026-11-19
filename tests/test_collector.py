@@ -69,6 +69,27 @@ def test_later_page_failure_keeps_committed_posts(conn):
     assert storage.count_posts(conn) == 3
 
 
+def test_fetch_failure_at_cap_exits_cleanly(conn):
+    class FillsThenFails:
+        def search_recent(self, query, next_token=None, max_results=100):
+            # A concurrent run fills the cap while this fetch is in flight.
+            collect(MockClient(), conn)
+            raise RuntimeError("simulated fetch failure")
+
+    summary = collect(FillsThenFails(), conn, max_posts=4)
+    assert summary == {"pages": 0, "received": 0, "inserted": 0, "total": 4}
+
+
+def test_fetch_failure_below_cap_propagates(conn):
+    class FillsThenFails:
+        def search_recent(self, query, next_token=None, max_results=100):
+            collect(MockClient(), conn)
+            raise RuntimeError("simulated fetch failure")
+
+    with pytest.raises(RuntimeError):
+        collect(FillsThenFails(), conn, max_posts=100)
+
+
 def test_cli_mock_mode_prints_summary(tmp_path, capsys):
     db = tmp_path / "cli.db"
     main(["--mode", "mock", "--db", str(db)])
