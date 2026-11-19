@@ -62,7 +62,7 @@ X API Recent Search (or deterministic fixture)
 src/collector.py          CLI / pagination / mock client
 src/x_client.py           X API client / 429 retry
 src/storage.py            SQLite schema / dedupe
-tests/fixtures/pages.json Synthetic 2-page API response
+src/fixtures/pages.json   Synthetic 2-page API response (packaged)
 tests/test_collector.py   Ingestion acceptance tests
 tests/test_x_client.py    HTTP failure and backoff tests
 docs/TASK-001.md          Devin Task 001 + definition of done

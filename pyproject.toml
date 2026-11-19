@@ -15,5 +15,8 @@ dev = ["pytest>=8,<10"]
 [tool.setuptools]
 packages = ["src"]
 
+[tool.setuptools.package-data]
+src = ["fixtures/*.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
