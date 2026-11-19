@@ -9,6 +9,7 @@ Usage:
 import argparse
 import json
 import os
+from contextlib import contextmanager
 from pathlib import Path
 
 from . import storage
@@ -48,6 +49,18 @@ def normalize_post(tweet):
     }
 
 
+@contextmanager
+def _write_txn(conn):
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        yield
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    else:
+        conn.execute("COMMIT")
+
+
 def collect(client, conn, query=QUERY, max_posts=None, max_pages=None):
     """Run the paginated collection loop. Returns a JSON-serializable summary."""
     pages = 0
@@ -55,21 +68,24 @@ def collect(client, conn, query=QUERY, max_posts=None, max_pages=None):
     inserted = 0
     next_token = None
 
-    # Hold the write lock for the whole run so a concurrent collect on the
-    # same database cannot check the post cap against stale state.
+    # Each page commits independently: a later fetch failure keeps earlier
+    # posts, and network/retry waits never hold the writer lock. The cap
+    # check and inserts stay inside one transaction so concurrent runs
+    # serialize and cannot overshoot max_posts.
     conn.isolation_level = None
-    conn.execute("BEGIN IMMEDIATE")
-    try:
-        while True:
-            if max_pages is not None and pages >= max_pages:
-                break
-            total = storage.count_posts(conn)
-            if max_posts is not None and total >= max_posts:
-                break
 
-            page = client.search_recent(query, next_token=next_token)
-            pages += 1
+    while True:
+        if max_pages is not None and pages >= max_pages:
+            break
+        with _write_txn(conn):
+            capped = max_posts is not None and storage.count_posts(conn) >= max_posts
+        if capped:
+            break
 
+        page = client.search_recent(query, next_token=next_token)
+        pages += 1
+
+        with _write_txn(conn):
             for tweet in page.get("data", []):
                 received += 1
                 if max_posts is not None and storage.count_posts(conn) >= max_posts:
@@ -77,21 +93,16 @@ def collect(client, conn, query=QUERY, max_posts=None, max_pages=None):
                 if storage.insert_post(conn, normalize_post(tweet)):
                     inserted += 1
 
-            next_token = (page.get("meta") or {}).get("next_token")
-            if not next_token:
-                break
-        summary = {
-            "pages": pages,
-            "received": received,
-            "inserted": inserted,
-            "total": storage.count_posts(conn),
-        }
-        conn.execute("COMMIT")
-    except Exception:
-        conn.execute("ROLLBACK")
-        raise
+        next_token = (page.get("meta") or {}).get("next_token")
+        if not next_token:
+            break
 
-    return summary
+    return {
+        "pages": pages,
+        "received": received,
+        "inserted": inserted,
+        "total": storage.count_posts(conn),
+    }
 
 
 def build_parser():

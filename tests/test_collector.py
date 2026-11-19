@@ -57,6 +57,18 @@ def test_max_posts_caps_stored_rows(conn):
     assert summary["inserted"] == 2
 
 
+def test_later_page_failure_keeps_committed_posts(conn):
+    class FailsOnSecondPage(MockClient):
+        def search_recent(self, query, next_token=None, max_results=100):
+            if next_token is not None:
+                raise RuntimeError("simulated fetch failure")
+            return super().search_recent(query, next_token, max_results)
+
+    with pytest.raises(RuntimeError):
+        collect(FailsOnSecondPage(), conn)
+    assert storage.count_posts(conn) == 3
+
+
 def test_cli_mock_mode_prints_summary(tmp_path, capsys):
     db = tmp_path / "cli.db"
     main(["--mode", "mock", "--db", str(db)])
