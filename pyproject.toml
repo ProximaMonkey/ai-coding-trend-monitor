@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-coding-trend-monitor"
+version = "0.1.0"
+description = "Proof-of-concept X recent search collector for AI coding conversations"
+requires-python = ">=3.10"
+dependencies = ["requests>=2.31,<3"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10"]
+
+[tool.setuptools]
+packages = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
