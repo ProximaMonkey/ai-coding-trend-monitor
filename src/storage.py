@@ -29,6 +29,8 @@ def connect(db_path):
     if path.parent != path and str(path.parent) not in ("", "."):
         path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
+    # Concurrent runs queue on the writer lock instead of racing past it.
+    conn.execute("PRAGMA busy_timeout = 60000")
     conn.execute(SCHEMA)
     conn.commit()
     return conn

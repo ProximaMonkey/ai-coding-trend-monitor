@@ -16,7 +16,7 @@ from .x_client import XClient
 
 QUERY = '("Claude Code" OR Cursor OR Codex OR "coding agent") -is:retweet'
 
-DEFAULT_FIXTURE = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "pages.json"
+DEFAULT_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "pages.json"
 
 
 class MockClient:
@@ -55,34 +55,43 @@ def collect(client, conn, query=QUERY, max_posts=None, max_pages=None):
     inserted = 0
     next_token = None
 
-    while True:
-        if max_pages is not None and pages >= max_pages:
-            break
-        total = storage.count_posts(conn)
-        if max_posts is not None and total >= max_posts:
-            break
+    # Hold the write lock for the whole run so a concurrent collect on the
+    # same database cannot check the post cap against stale state.
+    conn.isolation_level = None
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        while True:
+            if max_pages is not None and pages >= max_pages:
+                break
+            total = storage.count_posts(conn)
+            if max_posts is not None and total >= max_posts:
+                break
 
-        page = client.search_recent(query, next_token=next_token)
-        pages += 1
+            page = client.search_recent(query, next_token=next_token)
+            pages += 1
 
-        for tweet in page.get("data", []):
-            received += 1
-            if max_posts is not None and storage.count_posts(conn) >= max_posts:
-                continue
-            if storage.insert_post(conn, normalize_post(tweet)):
-                inserted += 1
-        conn.commit()
+            for tweet in page.get("data", []):
+                received += 1
+                if max_posts is not None and storage.count_posts(conn) >= max_posts:
+                    continue
+                if storage.insert_post(conn, normalize_post(tweet)):
+                    inserted += 1
 
-        next_token = (page.get("meta") or {}).get("next_token")
-        if not next_token:
-            break
+            next_token = (page.get("meta") or {}).get("next_token")
+            if not next_token:
+                break
+        summary = {
+            "pages": pages,
+            "received": received,
+            "inserted": inserted,
+            "total": storage.count_posts(conn),
+        }
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
 
-    return {
-        "pages": pages,
-        "received": received,
-        "inserted": inserted,
-        "total": storage.count_posts(conn),
-    }
+    return summary
 
 
 def build_parser():
@@ -97,7 +106,7 @@ def build_parser():
     parser.add_argument("--max-pages", type=int, default=None,
                         help="Stop after fetching this many result pages")
     parser.add_argument("--fixture", default=None,
-                        help="Mock-mode fixture path (default: tests/fixtures/pages.json)")
+                        help="Mock-mode fixture path (default: bundled pages.json)")
     return parser
 
 
