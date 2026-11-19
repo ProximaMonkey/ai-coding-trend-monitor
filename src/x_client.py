@@ -1,6 +1,7 @@
 """Minimal X API v2 recent-search client with rate-limit-aware retries."""
 
 import time
+from datetime import datetime, timedelta, timezone
 
 import requests
 
@@ -29,10 +30,12 @@ class XClient:
         self._sleep = sleep
 
     def search_recent(self, query, next_token=None, max_results=100):
+        start_time = datetime.now(timezone.utc) - timedelta(hours=24)
         params = {
             "query": query,
             "max_results": max(10, min(int(max_results), 100)),
             "tweet.fields": TWEET_FIELDS,
+            "start_time": start_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
         }
         if next_token:
             params["next_token"] = next_token
