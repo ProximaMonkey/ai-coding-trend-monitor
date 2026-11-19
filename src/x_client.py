@@ -2,6 +2,7 @@
 
 import time
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 
 import requests
 
@@ -68,8 +69,18 @@ class XClient:
     def _retry_wait(resp, attempt):
         """Seconds to wait after a 429: server hints first, else exponential."""
         retry_after = resp.headers.get("Retry-After")
-        if retry_after and retry_after.isdigit():
-            return min(float(retry_after), MAX_BACKOFF_SECONDS)
+        if retry_after:
+            if retry_after.isdigit():
+                return min(float(retry_after), MAX_BACKOFF_SECONDS)
+            try:
+                retry_dt = parsedate_to_datetime(retry_after)
+            except (TypeError, ValueError):
+                retry_dt = None
+            if retry_dt is not None:
+                if retry_dt.tzinfo is None:
+                    retry_dt = retry_dt.replace(tzinfo=timezone.utc)
+                wait = (retry_dt - datetime.now(timezone.utc)).total_seconds()
+                return min(max(wait, 1.0), MAX_BACKOFF_SECONDS)
         reset = resp.headers.get("x-rate-limit-reset")
         if reset and reset.isdigit():
             return min(max(float(reset) - time.time(), 1.0), MAX_BACKOFF_SECONDS)

@@ -1,5 +1,8 @@
 """HTTP failure and backoff tests for the X API client (no real network)."""
 
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
+
 import pytest
 import requests
 
@@ -71,6 +74,20 @@ def test_429_retries_with_rate_limit_reset():
     assert len(sleeps) == 1
     # reset is far in the future, so the wait is capped at MAX_BACKOFF_SECONDS
     assert sleeps[0] == 300.0
+
+
+def test_429_retries_with_http_date_retry_after():
+    future = datetime.now(timezone.utc) + timedelta(seconds=5)
+    responses = [
+        FakeResponse(429, headers={
+            "Retry-After": format_datetime(future, usegmt=True)
+        }),
+        FakeResponse(200, {"data": []}),
+    ]
+    client, _, sleeps = make_client(responses)
+    client.search_recent("q")
+    assert len(sleeps) == 1
+    assert 3.0 <= sleeps[0] <= 5.0
 
 
 def test_429_exhausts_retries_and_raises():
