@@ -1,11 +1,12 @@
 """Ingestion acceptance tests for the collector pipeline (fixture-only)."""
 
 import json
+from pathlib import Path
 
 import pytest
 
 from src import storage
-from src.collector import MockClient, collect, main
+from src.collector import DEFAULT_FIXTURE, MockClient, collect, main
 
 
 @pytest.fixture()
@@ -13,6 +14,11 @@ def conn(tmp_path):
     connection = storage.connect(tmp_path / "posts.db")
     yield connection
     connection.close()
+
+
+def test_default_fixture_is_packaged():
+    # Regression: the mock fixture must ship inside the installed package.
+    assert Path(DEFAULT_FIXTURE).is_file()
 
 
 def test_first_run_inserts_unique_posts(conn):
